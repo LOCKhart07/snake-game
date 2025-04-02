@@ -1,45 +1,23 @@
-from dataclasses import dataclass
-from flask import Flask, request, jsonify, Response, Blueprint
-from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import func
+from typing import List, Optional, Dict, Any, Union
 import datetime
-from waitress import serve
-from flask_cors import CORS
-from functools import wraps
 import json
 import base64
 import time
-
+from fastapi import FastAPI, Depends, Request, Response, HTTPException, Query, status
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, StreamingResponse
+from sqlmodel import Field, Session, SQLModel, create_engine, select, desc, asc, column
+from sqlalchemy import func, Column, String, Integer
+from sqlalchemy.ext.asyncio import create_async_engine
+from pydantic import BaseModel
+from starlette.middleware.base import BaseHTTPMiddleware
 import global_variables
 
-
-app = Flask(__name__)
-
-app.config["SQLALCHEMY_DATABASE_URI"] = global_variables.SQLALCHEMY_DATABASE_URI
-CORS(app, resources={r"/*": {"origins": global_variables.CORS_URLS}})
-
-
-# app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///score.db"
-# CORS(app)
-
-
-db = SQLAlchemy(app)
-# Create Blueprint for normal APIs
-normal_api_bp = Blueprint(
-    "normal_api", __name__, url_prefix=global_variables.URL_PREFIX + "/api"
-)
-
-# Create Blueprint for SSE/Stream APIs
-sse_api_bp = Blueprint(
-    "sse_api", __name__, url_prefix=global_variables.URL_PREFIX + "/stream"
-)
-
-
-@dataclass
-class User(db.Model):
-    __tablename__ = "users"
-    user_id = db.Column(db.Integer, primary_key=True)
-    username: str = db.Column(db.String(100), nullable=False)
+# Define SQLModel models
+class User(SQLModel, table=True):
+    __tablename__ = "users" # type: ignore #pyright issue
+    user_id: Optional[int] = Field(default=None, primary_key=True)
+    username: str = Field(nullable=False)
 
     def __repr__(self):
         return f"User(user_id={self.user_id}, username='{self.username}')"
@@ -48,13 +26,13 @@ class User(db.Model):
         return f"{self.username} (ID: {self.user_id})"
 
 
-class Score(db.Model):
-    __tablename__ = "scores"
-    score_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("users.user_id"))
-    score = db.Column(db.Integer, nullable=False)
-    scored_at = db.Column(db.String)
-    time_taken_seconds = db.Column(db.Integer)
+class Score(SQLModel, table=True):
+    __tablename__ = "scores" # type: ignore #pyright issue
+    score_id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: Optional[int] = Field(default=None, foreign_key="users.user_id")
+    score: int = Field(nullable=False)
+    scored_at: str = Field(default=None)
+    time_taken_seconds: int = Field(default=None)
 
     def __repr__(self):
         return f"Score(score_id={self.score_id}, user_id={self.user_id}, score={self.score}, scored_at={self.scored_at}, time_taken_seconds={self.time_taken_seconds})"
@@ -63,12 +41,32 @@ class Score(db.Model):
         return f"{self.score} scored by user {self.user_id} at {self.scored_at} ({self.time_taken_seconds} seconds)"
 
 
-# Create the tables
-with app.app_context():
-    db.create_all()
+# Create database engine
+engine = create_engine(global_variables.SQLALCHEMY_DATABASE_URI)
+SQLModel.metadata.create_all(engine)
 
 
-def get_scoreboard_pair(user: User, score: Score):
+# Define request models
+class ScoreRequest(BaseModel):
+    username: str
+    score: int
+    timeTakenSeconds: int
+
+
+# Define response models
+class ScoreboardEntry(BaseModel):
+    username: str
+    score: int
+    timeTakenSeconds: int
+    scoredAt: Optional[str] = None
+
+
+class ScoreboardResponse(BaseModel):
+    data: List[ScoreboardEntry]
+
+
+# Helper functions
+def get_scoreboard_pair(user: User, score: Score) -> Dict[str, Any]:
     return {
         "username": user.username,
         "score": score.score,
@@ -77,140 +75,166 @@ def get_scoreboard_pair(user: User, score: Score):
     }
 
 
-def get_client_ip():
+def get_client_ip(request: Request) -> str:
     """Function to retrieve the client's IP address."""
-    # Print all headers
     headers = request.headers
-    # for header, value in headers.items():
-    #     print(f"{header}: {value}")
     if "X-Forwarded-For" in headers:
         # If behind a proxy, use the first IP in the X-Forwarded-For list
         return headers["X-Forwarded-For"].split(",")[0]
     elif "X-Real-Ip" in headers:
         return headers["X-Real-Ip"]
+    elif request.client is None:
+        return "HOW TF DID THIS HAPPEN!"
     else:
         # Direct access (not behind a proxy)
-        return request.remote_addr
+        return request.client.host
 
 
-def xor_cipher(data, key):
+def xor_cipher(data: str, key: str) -> str:
     result = "".join(
         chr(ord(data[i]) ^ ord(key[i % len(key)])) for i in range(len(data))
     )
     return result
 
 
-def validate_request(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
+# Create session dependency
+def get_db():
+    with Session(engine) as session:
+        yield session
 
-        try:
-            request_body = request.get_json()
-            username = request_body["username"]
-            score = request_body["score"]
-            time_taken_seconds = request_body["timeTakenSeconds"]
-        except Exception as e:
-            return jsonify({"error": "Bad Request", "message": "Field missing"}), 400
 
-        current_time = datetime.datetime.now().timestamp()
-        client_ip = get_client_ip()
+# Create FastAPI app
+app = FastAPI()
 
-        encoded_data = request.headers.get("Accept-Connection")
-        if not encoded_data:
-            print(
-                f"Suspicious Activity: IP {client_ip} detected possible attempt to direct access the API. | "
-                f"Request body: {json.dumps(request_body)} | "
-                f"No 'Accept-Connection' header."
-            )
-            request_body["timeTakenSeconds"] = float(time_taken_seconds) + 1
-            return jsonify(request_body)
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    # allow_origins=["*"],
+    allow_origins=global_variables.CORS_URLS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+async def validate_score_request(request: Request):
+    """Dependency to validate score submission requests"""
+    # Read request body
+    body_bytes = await request.body()
 
-        try:
-            key = f"{username}~{score}~ty~{time_taken_seconds}"
-            decoded_bytes = base64.b64decode(encoded_data)
-            decoded_str = decoded_bytes.decode("utf-8")
-            data = base64.b64decode(xor_cipher(decoded_str, key))
-            json_data = json.loads(data)
-        except Exception as e:
-            print(
-                f"Suspicious Activity: IP {client_ip} detected possible request body manipulation. | "
-                f"Request body: {json.dumps(request_body)} | "
-                f"Encoded data: {encoded_data}."
-            )
-            request_body["timeTakenSeconds"] = float(time_taken_seconds) + 1
-            return jsonify(request_body)
+    try:
+        request_body = json.loads(body_bytes)
+        username = request_body["username"]
+        score = request_body["score"]
+        time_taken_seconds = request_body["timeTakenSeconds"]
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"error": "Bad Request", "message": "Field missing"},
+        )
 
-        timestamp_from_request = int(json_data["timestamp"])
-        if abs(current_time - timestamp_from_request) <= 60:
-            # Valid request
-            return f(*args, **kwargs)
+    current_time = datetime.datetime.now().timestamp()
+    client_ip = get_client_ip(request)
 
+    encoded_data = request.headers.get("Accept-Connection")
+    if not encoded_data:
+        print(
+            f"Suspicious Activity: IP {client_ip} detected possible attempt to direct access the API. | "
+            f"Request body: {json.dumps(request_body)} | "
+            f"No 'Accept-Connection' header."
+        )
+        # Instead of modifying the response, raise an exception
+        # or return a specific result that the endpoint can handle
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail="Invalid request signature"
+        )
+
+    try:
+        key = f"{username}~{score}~ty~{time_taken_seconds}"
+        decoded_bytes = base64.b64decode(encoded_data)
+        decoded_str = decoded_bytes.decode("utf-8")
+        data = base64.b64decode(xor_cipher(decoded_str, key))
+        json_data = json.loads(data)
+    except Exception:
+        print(
+            f"Suspicious Activity: IP {client_ip} detected possible request body manipulation. | "
+            f"Request body: {json.dumps(request_body)} | "
+            f"Encoded data: {encoded_data}."
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail="Invalid request signature"
+        )
+
+    timestamp_from_request = int(json_data["timestamp"])
+    if abs(current_time - timestamp_from_request) > 60:
         print(
             f"Suspicious Activity: IP {client_ip} detected a potential replay attack. | "
             f"Request body: {json.dumps(request_body)}. | "
             f"Request timestamp: {timestamp_from_request}, Current time: {current_time}. "
         )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail="Request expired"
+        )
 
-        request_body["timeTakenSeconds"] = float(time_taken_seconds) + 1
-        return jsonify(request_body)
-
-    return decorated_function
+    # If validation passes, return the parsed body
+    return request_body
 
 
-@normal_api_bp.route("/ping")
-def ping():
+# API Endpoints
+@app.get(f"{global_variables.URL_PREFIX}/api/ping")
+async def ping():
     return "pong"
 
 
-@normal_api_bp.route("/score", methods=["POST"])
-@validate_request
-def save_score():
-    try:
-        request_body = request.get_json()
-        username = request_body["username"]
-        score = request_body["score"]
-        time_taken_seconds = request_body["timeTakenSeconds"]
-    except Exception as e:
-        return jsonify({"error": "Bad Request", "message": "Field missing"}), 400
-
-    user = User.query.filter_by(username=username).first()
+@app.post(f"{global_variables.URL_PREFIX}/api/score", response_model=ScoreRequest)
+async def save_score(validated: dict = Depends(validate_score_request),db: Session = Depends(get_db)):
+        
+    score_request = ScoreRequest(
+            username=validated["username"],
+            score=validated["score"],
+            timeTakenSeconds=int(validated["timeTakenSeconds"])
+        )
+    user = db.exec(select(User).where(User.username == score_request.username)).first()
     if not user:
-        user = User(username=username)
-        db.session.add(user)
-        db.session.commit()
+        user = User(username=score_request.username)
+        db.add(user)
+        db.commit()
+        db.refresh(user)
 
-    score = Score(
+    new_score = Score(
         user_id=user.user_id,
-        score=score,
+        score=score_request.score,
         scored_at=datetime.datetime.now(datetime.UTC).isoformat(),
-        time_taken_seconds=time_taken_seconds,
+        time_taken_seconds=score_request.timeTakenSeconds,
     )
+    print("RECIEVED A SCORE: ", new_score)
 
-    db.session.add(score)
-    db.session.commit()
+    db.add(new_score)
+    db.commit()
 
-    return jsonify(request_body)
+    return score_request
 
 
-def get_top_scoreboard_service(page, per_page, username):
+def get_top_scoreboard_service(db: Session, page: int, per_page: int, username: Optional[str] = None):
     query = (
-        db.session.query(
+        select(
             User,
             func.max(Score.score).label("max_score"),
             Score.scored_at,
             Score.time_taken_seconds,
         )
-        .join(Score, User.user_id == Score.user_id)
-        .group_by(User.user_id)
+        .join(Score)
+        .group_by(User.user_id) #type: ignore #IDK
     )
 
     if username:
-        query = query.filter(User.username.like(f"%{username}%"))
-    query = query.order_by(Score.score.desc(), Score.scored_at.asc()).slice(
-        page - 1, per_page
-    )
+        query = query.where(column(User.username).like(f"%{username}%"))
 
-    result = query.all()
+    query = query.order_by(desc(Score.score), asc(Score.scored_at))
+
+    # Execute query with pagination
+    result = db.exec(query.offset((page - 1) * per_page).limit(per_page)).all()
 
     return [
         get_scoreboard_pair(
@@ -225,54 +249,49 @@ def get_top_scoreboard_service(page, per_page, username):
     ]
 
 
-@normal_api_bp.route("/score")
-def get_scoreboard():
+@app.get(f"{global_variables.URL_PREFIX}/api/score", response_model=ScoreboardResponse)
+async def get_scoreboard(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(10, ge=1),
+    username: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    query = select(User, Score).join(Score)
 
-    page = int(request.args.get("page", 1))
-    per_page = int(request.args.get("per_page", 10))
-    username = request.args.get("username", None)
-
-    query = db.session.query(User, Score).join(Score, User.user_id == Score.user_id)
     if username:
-        query = query.filter(User.username.like(f"%{username}%"))
-    query = query.order_by(Score.score.desc(), Score.scored_at.asc()).slice(
-        page - 1, per_page
-    )
-    result = query.all()
+        query = query.where(column(User.username).like(f"%{username}%"))
 
-    return jsonify(
-        {
-            "data": [
-                get_scoreboard_pair(user=user, score=score) for user, score in result
-            ]
-        }
-    )
+    query = query.order_by(desc(Score.score), desc(Score.scored_at))
 
+    # Execute query with pagination
+    result = db.exec(query.offset((page - 1) * per_page).limit(per_page)).all()
 
-@normal_api_bp.route("/personal-best")
-def get_user_top_score():
+    return {
+        "data": [
+            get_scoreboard_pair(user=user, score=score) for user, score in result
+        ]
+    }
 
-    username = request.args.get("username", None)
-
+@app.get(f"{global_variables.URL_PREFIX}/api/personal-best", response_model=dict)
+async def get_user_top_score(username: str, db: Session = Depends(get_db)):
     query = (
-        db.session.query(
+        select(
             User,
-            Score.score.label("max_score"),
+            Score.score.label("max_score"), #type: ignore #IDK
             Score.scored_at,
             Score.time_taken_seconds,
         )
-        .join(Score, User.user_id == Score.user_id)
-        .filter(User.username == username)  # Filter by the user's name
-        .order_by(Score.score.desc(), Score.time_taken_seconds.asc())
-        .limit(1)  # Limit to just the top score
+        .join(Score)
+        .where(User.username == username)
+        .order_by(desc(Score.score), asc(Score.time_taken_seconds))
     )
 
-    result = query.all()
+    result = db.exec(query).first()
 
     if result:
-        user, score, scored_at, time_taken_seconds = result[0]
+        user, score, scored_at, time_taken_seconds = result
     else:
-        user = User(username=username)
+        user = User(username=username) if username else User(username="")
         score = 0
         scored_at = None
         time_taken_seconds = None
@@ -285,40 +304,37 @@ def get_user_top_score():
             time_taken_seconds=time_taken_seconds,
         ),
     )
-    return jsonify(
-        {
-            "data": data,
-        }
-    )
+
+    return {"data": data}
 
 
-@normal_api_bp.route("/top-score")
-def get_top_scoreboard():
-    page = int(request.args.get("page", 1))
-    per_page = int(request.args.get("per_page", 10))
-    username = request.args.get("username", None)
+@app.get(f"{global_variables.URL_PREFIX}/api/top-score", response_model=ScoreboardResponse)
+async def get_top_scoreboard(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(10, ge=1),
+    username: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    return {
+        "data": get_top_scoreboard_service(
+            db=db, page=page, per_page=per_page, username=username
+        )
+    }
 
-    return jsonify(
-        {
-            "data": get_top_scoreboard_service(
-                page=page, per_page=per_page, username=username
-            )
-        }
-    )
 
-
-@sse_api_bp.route("/top-score")
-def stream_scores():
-    page = int(request.args.get("page", 1))
-    per_page = int(request.args.get("per_page", 10))
-    username = request.args.get("username", None)
-
-    def event_stream():
+@app.get(f"{global_variables.URL_PREFIX}/stream/top-score")
+async def stream_scores(
+    request: Request,
+    page: int = Query(1, ge=1),
+    per_page: int = Query(10, ge=1),
+    username: Optional[str] = None,
+):
+    async def event_stream():
         last_data = None
         while True:
-            with app.app_context():
+            with Session(engine) as db:
                 current_data = get_top_scoreboard_service(
-                    page=page, per_page=per_page, username=username
+                    db=db, page=page, per_page=per_page, username=username
                 )
                 if current_data != last_data:
                     data = {
@@ -335,19 +351,21 @@ def stream_scores():
                     yield f"data: {json.dumps(data)}\n\n"
 
             # Wait for either 5 seconds or a new score update
-            time.sleep(global_variables.GET_SCORES_POLLING_RATE_SECONDS)
+            await asyncio.sleep(global_variables.GET_SCORES_POLLING_RATE_SECONDS)
 
-    return Response(event_stream(), mimetype="text/event-stream")
+            # Check if client disconnected
+            if await request.is_disconnected():
+                break
 
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
-# Register the blueprints
-app.register_blueprint(normal_api_bp)  # Register normal API blueprint
-app.register_blueprint(sse_api_bp)  # Register SSE API blueprint
 
 if __name__ == "__main__":
-    # app.run("0.0.0.0", debug=True)
+    import uvicorn
+    import asyncio
+
     print("BOOTING UP THE REACTORS!!!")
     host = "0.0.0.0"
     port = 8000
     print(f"STARTING WEBSERVER ON {host}:{port}")
-    # serve(app=app, host=host, port=port, threads=100, connection_limit=500)
+    uvicorn.run(app, host=host, port=port)
