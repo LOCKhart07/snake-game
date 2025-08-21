@@ -43,10 +43,8 @@ npm run build  # Build for production
 ### Backend Development
 ```bash
 cd backend
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-pip install -r requirements.txt
-python app.py  # Start development server
+uv sync
+uv run python app.py  # Start development server
 ```
 
 ## 🐳 Docker Deployment

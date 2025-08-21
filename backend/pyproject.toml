@@ -1,0 +1,18 @@
+[project]
+name = "snake-game"
+version = "1.0.0"
+description = "Backend for the snake game project"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "async-timeout>=4.0.3",
+    "asyncio>=3.4.3",
+    "fastapi>=0.103.1",
+    "httpx>=0.24.1",
+    "pydantic>=2.3.0",
+    "python-dotenv>=1.0.0",
+    "python-multipart>=0.0.6",
+    "sqlmodel>=0.0.8",
+    "typing-extensions>=4.7.1",
+    "uvicorn>=0.23.2",
+]

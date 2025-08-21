@@ -1,31 +1,41 @@
-# Use an official Python runtime as a parent image
-FROM python:3.11-slim
+# Use a Python image with uv pre-installed
+FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim
 
-# Create a non-root user
+# Create a non-root user to run the application
+# This is a good practice for security and compatibility with some libraries
 RUN useradd -m snake
 
-# Set the working directory to /code and change ownership
-WORKDIR /code
-RUN chown -R snake:snake /code
+# Install the project into `/app`
+WORKDIR /app
+RUN chown -R snake:snake /app
 
 # Switch to the non-root user
 USER snake
 
-# Copy and install dependencies
-COPY --chown=snake:snake ./requirements.txt /code/requirements.txt
-RUN pip install --no-cache-dir --upgrade -r /code/requirements.txt --user --no-warn-script-location
+# Enable bytecode compilation
+ENV UV_COMPILE_BYTECODE=1
+# Copy from the cache instead of linking since it's a mounted volume
+ENV UV_LINK_MODE=copy
+# Ensure installed tools can be executed out of the box
+ENV UV_TOOL_BIN_DIR=/usr/local/bin
 
-# Copy application code
-COPY --chown=snake:snake ./ /code
+# Install the project's dependencies using the lockfile and settings
+RUN --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=bind,source=uv.lock,target=uv.lock \
+    --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
+    uv sync --locked --no-install-project --no-dev
 
-# Ensure user-installed packages are in PATH
-ENV PATH="/home/snake/.local/bin:${PATH}"
+# Then, add the rest of the project source code and install it
+# Installing separately from its dependencies allows optimal layer caching
+COPY --chown=snake:snake . /app
 
-# Expose the port
-EXPOSE 8000
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --locked --no-dev
+# Place executables in the environment at the front of the path
+ENV PATH="/app/.venv/bin:$PATH"
+# Reset the entrypoint, don't invoke `uv`
+ENTRYPOINT []
 
-# Set the maintainer
 LABEL maintainer="Jenslee Dsouza <dsouzajenslee@gmail.com>"
 
-# Start Uvicorn with the root path
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
+CMD ["uv", "run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
