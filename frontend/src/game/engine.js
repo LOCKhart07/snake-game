@@ -33,6 +33,7 @@ export class Snake {
     this.autoplay = false;
     this.birthDatetime = new Date();
     this.pauses = [];
+    this.pendingTurn = null;
   }
 
   queue_turn_left() {
@@ -60,6 +61,24 @@ export class Snake {
   flush_queued_move() {
     this.dx = this.dxToApply;
     this.dy = this.dyToApply;
+  }
+
+  queueTurn(direction) {
+    switch (direction) {
+      case 'left':  this.queue_turn_left();  break;
+      case 'right': this.queue_turn_right(); break;
+      case 'up':    this.queue_turn_up();    break;
+      case 'down':  this.queue_turn_down();  break;
+    }
+  }
+
+  applyPendingTurn() {
+    if (!this.pendingTurn) return;
+    const turn = this.pendingTurn;
+    this.pendingTurn = null;
+    if (canTurn(this, turn)) {
+      this.queueTurn(turn);
+    }
   }
 
   increase_length() {
@@ -141,13 +160,24 @@ export function canTurn(snake, direction) {
   switch (direction) {
     case 'left':
     case 'right':
-      return snake.dxToApply === 0;
+      return snake.dx === 0 && snake.dxToApply === 0;
     case 'up':
     case 'down':
-      return snake.dyToApply === 0;
+      return snake.dy === 0 && snake.dyToApply === 0;
     default:
       return false;
   }
+}
+
+const KEY_TO_DIRECTION = {
+  ArrowLeft: 'left',  a: 'left',  j: 'left',
+  ArrowRight: 'right', d: 'right', l: 'right',
+  ArrowUp: 'up',     w: 'up',    i: 'up',
+  ArrowDown: 'down',  s: 'down',  k: 'down',
+};
+
+export function getDirectionFromKey(key) {
+  return KEY_TO_DIRECTION[key] || null;
 }
 
 /**

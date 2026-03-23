@@ -5,6 +5,7 @@ import {
   formatTime,
   createApple,
   canTurn,
+  getDirectionFromKey,
   shouldSubmitScore,
   getRandomInt,
   GRID_SIZE,
@@ -117,6 +118,77 @@ describe('canTurn — direction guard (bug #2)', () => {
     // Queued left: dxToApply=-20, dyToApply=0
     // Trying right should be blocked
     expect(canTurn(snake, 'right')).toBe(false);
+  });
+
+  test('prevents reversal via two fast turns: down then right+up', () => {
+    const snake = new Snake(160, 160, GRID_SIZE);
+    snake.queue_turn_down();
+    snake.flush_queued_move();
+    // Moving down: dx=0, dy=20
+    snake.queue_turn_right();
+    // Queued right: dxToApply=20, dyToApply=0
+    // Up should be blocked — snake body is still going down (dy=20)
+    expect(canTurn(snake, 'up')).toBe(false);
+  });
+});
+
+describe('input queue (pendingTurn)', () => {
+  test('pendingTurn is applied after flush', () => {
+    const snake = new Snake(160, 160, GRID_SIZE);
+    // Moving right: dx=20, dy=0
+    snake.queue_turn_up();
+    snake.pendingTurn = 'left';
+    snake.flush_queued_move();
+    // Now dx=0, dy=-20 (moving up)
+    snake.applyPendingTurn();
+    // Pending left should now be queued
+    expect(snake.dxToApply).toBe(-GRID_SIZE);
+    expect(snake.dyToApply).toBe(0);
+    expect(snake.pendingTurn).toBeNull();
+  });
+
+  test('invalid pendingTurn is discarded', () => {
+    const snake = new Snake(160, 160, GRID_SIZE);
+    // Moving right: dx=20, dy=0
+    snake.pendingTurn = 'left'; // reversal — invalid
+    snake.flush_queued_move();
+    snake.applyPendingTurn();
+    // Should stay moving right, pending cleared
+    expect(snake.dxToApply).toBe(GRID_SIZE);
+    expect(snake.pendingTurn).toBeNull();
+  });
+
+  test('pendingTurn is null by default', () => {
+    const snake = new Snake(160, 160, GRID_SIZE);
+    expect(snake.pendingTurn).toBeNull();
+  });
+});
+
+describe('getDirectionFromKey', () => {
+  test('maps arrow keys to directions', () => {
+    expect(getDirectionFromKey('ArrowLeft')).toBe('left');
+    expect(getDirectionFromKey('ArrowRight')).toBe('right');
+    expect(getDirectionFromKey('ArrowUp')).toBe('up');
+    expect(getDirectionFromKey('ArrowDown')).toBe('down');
+  });
+
+  test('maps WASD keys to directions', () => {
+    expect(getDirectionFromKey('a')).toBe('left');
+    expect(getDirectionFromKey('d')).toBe('right');
+    expect(getDirectionFromKey('w')).toBe('up');
+    expect(getDirectionFromKey('s')).toBe('down');
+  });
+
+  test('maps IJKL keys to directions', () => {
+    expect(getDirectionFromKey('j')).toBe('left');
+    expect(getDirectionFromKey('l')).toBe('right');
+    expect(getDirectionFromKey('i')).toBe('up');
+    expect(getDirectionFromKey('k')).toBe('down');
+  });
+
+  test('returns null for unmapped keys', () => {
+    expect(getDirectionFromKey('x')).toBeNull();
+    expect(getDirectionFromKey('Escape')).toBeNull();
   });
 });
 

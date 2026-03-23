@@ -74,6 +74,7 @@ import {
   formatTime,
   createApple,
   canTurn,
+  getDirectionFromKey,
   shouldSubmitScore,
   GRID_SIZE,
   GRID_COUNT,
@@ -265,6 +266,7 @@ function updateGameState() {
     snake.doOptimalMove(snake.x, snake.y);
   }
   snake.flush_queued_move();
+  snake.applyPendingTurn();
 
   // Move snake by velocity and handle wrapping
   snake.move();
@@ -393,32 +395,15 @@ document.addEventListener("keydown", function (e) {
     autoplayCheatPointer = 0
   }
 
-  // left arrow key
-  if ((e.key === "ArrowLeft" || e.key === "a" || e.key === "j") && canTurn(snake, 'left')) {
+  const direction = getDirectionFromKey(e.key);
+  if (direction) {
     snake.autoplay = false;
-    snake.queue_turn_left();
+    if (canTurn(snake, direction)) {
+      snake.queueTurn(direction);
+    } else {
+      snake.pendingTurn = direction;
+    }
   }
-  // up arrow key
-  else if ((e.key === "ArrowUp" || e.key === "w" || e.key === "i") && canTurn(snake, 'up')) {
-    snake.autoplay = false;
-    snake.queue_turn_up();
-  }
-  // right arrow key
-  else if ((e.key === "ArrowRight" || e.key === "d" || e.key === "l") && canTurn(snake, 'right')) {
-    snake.autoplay = false;
-    snake.queue_turn_right();
-  }
-  // down arrow key
-  else if ((e.key === "ArrowDown" || e.key === "s" || e.key === "k") && canTurn(snake, 'down')) {
-    snake.autoplay = false;
-    snake.queue_turn_down();
-  }
-  // // c key
-  // else if (e.key === "c") {
-  //   snake.autoplay = !snake.autoplay;
-
-  //   console.log("Cheating: autoplay toggled");
-  // }
 });
 
 document.addEventListener('visibilitychange', function () {
