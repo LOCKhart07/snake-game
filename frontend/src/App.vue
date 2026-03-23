@@ -71,12 +71,10 @@ import Score from './components/Score.vue'
 import Alert from "./components/Alert.vue";
 import {
   Snake,
-  Apple,
   formatTime,
   createApple,
   canTurn,
   shouldSubmitScore,
-  getRandomInt,
   GRID_SIZE,
   GRID_COUNT,
   SNAKE_INITIAL_LENGTH,
