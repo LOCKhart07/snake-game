@@ -2,7 +2,7 @@
 
 [![Play Now](https://img.shields.io/badge/Play-Now-brightgreen)](https://slitherbite.lockhart.in)
 [![Vue.js](https://img.shields.io/badge/Vue.js-3-4FC08D?logo=vue.js)](https://vuejs.org/)
-[![Flask](https://img.shields.io/badge/Flask-3.0.3-000000?logo=flask)](https://flask.palletsprojects.com/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.103+-009688?logo=fastapi)](https://fastapi.tiangolo.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 A modern take on the classic snake game with real-time competitive features! Challenge yourself and compete with players worldwide on our global leaderboard.
@@ -38,13 +38,15 @@ cd frontend
 npm install
 npm run dev    # Start development server
 npm run build  # Build for production
+npm test       # Run unit tests
 ```
 
 ### Backend Development
 ```bash
 cd backend
 uv sync
-uv run python app.py  # Start development server
+sudo mkdir -p /data && sudo touch /data/score.db  # Create database file
+uv run uvicorn main:app --host 0.0.0.0 --port 8000  # Start development server
 ```
 
 ## 🐳 Docker Deployment
