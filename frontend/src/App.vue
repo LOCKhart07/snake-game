@@ -65,10 +65,23 @@
 </template>
 
 <script setup>
-import { onMounted, ref, watch, computed } from "vue";
+import { onMounted, ref } from "vue";
 import ScoreService from "./services/ScoreService";
 import Score from './components/Score.vue'
 import Alert from "./components/Alert.vue";
+import {
+  Snake,
+  Apple,
+  formatTime,
+  createApple,
+  canTurn,
+  shouldSubmitScore,
+  getRandomInt,
+  GRID_SIZE,
+  GRID_COUNT,
+  SNAKE_INITIAL_LENGTH,
+  SNAKE_BODY_GRADIENT,
+} from "./game/engine.js";
 
 
 const instructions = ref(["Move with arrow keys/WASD/IJKL", "Eat the 404", "Don't touch your tail", "Pause/Unpause with Esc"])
@@ -88,37 +101,8 @@ const personalBest = ref(0);
 
 const currentScore = ref(0);
 
-function formatTime(totalSeconds) {
-  // const hours = Math.floor(timeTaken / 3600);
-  // const minutes = Math.floor((timeTaken % 3600) / 60);
-  // const seconds = timeTaken % 60;
-
-  // return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-
-  let minutes = Math.floor(totalSeconds / 60);
-  let seconds = Math.round(totalSeconds % 60);
-
-  return `${minutes}m ${seconds}s`;
-}
-
-
-// Function to create a new apple at a random position not occupied by the snake
-function createApple() {
-  let newApplePosition;
-
-  do {
-    newApplePosition = {
-      x: getRandomInt(0, 25) * grid,
-      y: getRandomInt(0, 25) * grid
-    };
-  } while (isAppleOnSnake(newApplePosition)); // Ensure the apple is not on the snake
-
-  return new Apple(newApplePosition.x, newApplePosition.y); // Return the new apple object
-}
-
-// Function to check if the apple's position overlaps with the snake's body
-function isAppleOnSnake(position) {
-  return snake.cells.some(cell => cell.x === position.x && cell.y === position.y);
+function createAppleForSnake() {
+  return createApple(snake, GRID_SIZE, GRID_COUNT);
 }
 
 // If SSE fails the first time, use normal api
@@ -196,20 +180,12 @@ onMounted(async () => {
 
   // pauses = []
 
-  snake = new Snake(160, 160, grid);
-  apple = createApple();
+  snake = new Snake(160, 160, GRID_SIZE);
+  apple = createAppleForSnake();
 });
 
 
 
-
-const SNAKE_BODY_GRADIENT = { start: [24, 87, 39], end: [15, 54, 24] };
-const SNAKE_INITIAL_LENGTH = 4;
-// const SNAKE_EAT_SOUND = new Audio("gulp.mp3");
-
-// the canvas width & height, snake x & y, and the apple x & y, all need to be a multiples of the grid size in order for collision detection to work
-// (e.g. 16 * 25 = 400)
-var grid = 20;
 
 let username = localStorage.getItem("username");
 
@@ -242,118 +218,9 @@ function unpause_game() {
   game_paused = false;
   snake.pauses.push(new Date().getTime() - currentPauseStart.getTime())
   currentPauseStart = null;
-  requestAnimationFrame(loop);
 }
 
 var game_paused = false;
-
-class Snake {
-  constructor(x, y, grid) {
-    this.x = x;
-    this.y = y;
-    this.dx = grid;
-    this.dy = 0;
-    this.dxToApply = grid;
-    this.dyToApply = 0;
-    this.cells = [];
-    // Set up a tracker for snake positions (for collision)
-    this.snakePositionSet = new Set();
-
-    this.maxCells = SNAKE_INITIAL_LENGTH;
-    this.autoplay = false;
-    this.birthDatetime = new Date()
-    this.pauses = [];
-
-  }
-
-  queue_turn_left() {
-    this.dxToApply = -grid;
-    this.dyToApply = 0;
-  }
-  queue_turn_right() {
-    this.dxToApply = grid;
-    this.dyToApply = 0;
-  }
-  queue_turn_up() {
-    this.dyToApply = -grid;
-    this.dxToApply = 0;
-  }
-  queue_turn_down() {
-    this.dyToApply = grid;
-    this.dxToApply = 0;
-  }
-
-  move() {
-    this.x += this.dx;
-    this.y += this.dy;
-  }
-
-  flush_queued_move() {
-    this.dx = this.dxToApply;
-    this.dy = this.dyToApply;
-  }
-
-  increase_length() {
-    this.maxCells++;
-    currentScore.value += 1
-  }
-
-  calculateGradient(i, firstColor, secondColor) {
-    const step = i / (this.maxCells - 1);
-    const r = Math.round(
-      firstColor[0] + (secondColor[0] - firstColor[0]) * step
-    );
-    const g = Math.round(
-      firstColor[1] + (secondColor[1] - firstColor[1]) * step
-    );
-    const b = Math.round(
-      firstColor[2] + (secondColor[2] - firstColor[2]) * step
-    );
-
-    return `rgba(${r}, ${g}, ${b}, 1)`;
-  }
-
-  doOptimalMove(x, y) {
-    x = x / grid;
-    y = y / grid;
-    console.log(x, "   ", y);
-
-    if (y === 0) {
-      if (this.dy === -20) {
-        this.queue_turn_right();
-      } else if (this.dx === -20) {
-        this.queue_turn_down();
-      } else {
-        this.queue_turn_down();
-      }
-    } else if (y === 25 - 1) {
-      if (this.dx === -20) {
-        this.queue_turn_up();
-      } else if (this.dy === 20) {
-        this.queue_turn_right();
-      } else {
-        this.queue_turn_up();
-      }
-    } else if (this.dx === 20) {
-      this.queue_turn_down();
-    }
-  }
-}
-
-class Apple {
-  constructor(x, y) {
-    this.x = x;
-    this.y = y;
-  }
-}
-
-
-
-// get random whole numbers in a specific range
-// @see https://stackoverflow.com/a/1527820/2124254
-function getRandomInt(min, max) {
-  return Math.floor(Math.random() * (max - min)) + min;
-}
 
 let frameCount = 0;
 let msPrev = window.performance.now();
@@ -395,18 +262,18 @@ function loop() {
 function updateGameState() {
   if (game_paused) {
     // context.fillStyle = "#ffcb74";
-    // context.fillRect(20, 200, (25 * grid) * 0.6, grid * 5);
+    // context.fillRect(20, 200, (25 * GRID_SIZE) * 0.6, GRID_SIZE * 5);
 
     // context.fillStyle = "#ffcb74";
-    // context.font = `${grid * 4}px impact`;
-    // context.fillText("PAUSED", (grid * 25) * 0.25, (grid * 25) * 0.55);
+    // context.font = `${GRID_SIZE * 4}px impact`;
+    // context.fillText("PAUSED", (GRID_SIZE * 25) * 0.25, (GRID_SIZE * 25) * 0.55);
 
     context.fillStyle = "#ffcb74";
     context.strokeStyle = "#373636";
     context.lineWidth = 1; // Outline thickness (adjust to your liking)
-    context.font = `${grid * 4}px impact`;
-    context.strokeText("PAUSED", (grid * 25) * 0.25, (grid * 25) * 0.55);
-    context.fillText("PAUSED", (grid * 25) * 0.25, (grid * 25) * 0.55);
+    context.font = `${GRID_SIZE * 4}px impact`;
+    context.strokeText("PAUSED", (GRID_SIZE * 25) * 0.25, (GRID_SIZE * 25) * 0.55);
+    context.fillText("PAUSED", (GRID_SIZE * 25) * 0.25, (GRID_SIZE * 25) * 0.55);
 
 
     // context.fillStyle = "red";
@@ -430,29 +297,26 @@ function updateGameState() {
   snake.x = (snake.x + canvasWidth) % canvasWidth;
   snake.y = (snake.y + canvasHeight) % canvasHeight;
 
-  // Track snake position using a Set for faster collision checking
   const headPosition = `${snake.x},${snake.y}`;
   snake.cells.unshift({ x: snake.x, y: snake.y });
-  snake.snakePositionSet.add(headPosition);
 
   if (snake.cells.length > snake.maxCells) {
-    const tail = snake.cells.pop();
-    snake.snakePositionSet.delete(`${tail.x},${tail.y}`);
+    snake.cells.pop();
   }
 
   // Draw the apple
   context.fillStyle = "#ffcb74";
-  context.fillRect(apple.x, apple.y, grid - 1, grid - 1);
+  context.fillRect(apple.x, apple.y, GRID_SIZE - 1, GRID_SIZE - 1);
   context.fillStyle = "#373636";
-  context.font = `${grid * 0.5}px arial`;
-  context.fillText("404", apple.x, apple.y + grid / 1.5);
+  context.font = `${GRID_SIZE * 0.5}px arial`;
+  context.fillText("404", apple.x, apple.y + GRID_SIZE / 1.5);
 
 
   // Draw snake with gradient and eyes
   context.beginPath();
   snake.cells.forEach((cell, index) => {
     context.fillStyle = snake.calculateGradient(index, SNAKE_BODY_GRADIENT.end, SNAKE_BODY_GRADIENT.start);
-    context.fillRect(cell.x, cell.y, grid - 1, grid - 1);
+    context.fillRect(cell.x, cell.y, GRID_SIZE - 1, GRID_SIZE - 1);
 
     // Draw eyes if head
     if (index === 0) {
@@ -474,7 +338,8 @@ function updateGameState() {
   // Handle eating apple
   if (snake.x === apple.x && snake.y === apple.y) {
     snake.increase_length();
-    apple = createApple();
+    currentScore.value = snake.maxCells - SNAKE_INITIAL_LENGTH;
+    apple = createAppleForSnake();
 
     if (currentScore.value > personalBest.value) {
       personalBest.value = currentScore.value;
@@ -490,12 +355,13 @@ function updateGameState() {
       // Subtract total pause time from time taken
       timeTaken = Math.max(0, timeTaken - totalPauseTime);
       const timeTakenSeconds = timeTaken / 1000;
-      console.log(timeTakenSeconds)
-      ScoreService.saveScore(username, currentScore.value, timeTakenSeconds);
+      if (shouldSubmitScore(currentScore.value)) {
+        ScoreService.saveScore(username, currentScore.value, timeTakenSeconds);
+      }
       currentScore.value = 0;
 
-      snake = new Snake(160, 160, grid);
-      apple = createApple();
+      snake = new Snake(160, 160, GRID_SIZE);
+      apple = createAppleForSnake();
       break;
     }
   }
@@ -542,22 +408,22 @@ document.addEventListener("keydown", function (e) {
   }
 
   // left arrow key
-  if ((e.key === "ArrowLeft" || e.key === "a" || e.key === "j") && snake.dx === 0) {
+  if ((e.key === "ArrowLeft" || e.key === "a" || e.key === "j") && canTurn(snake, 'left')) {
     snake.autoplay = false;
     snake.queue_turn_left();
   }
   // up arrow key
-  else if ((e.key === "ArrowUp" || e.key === "w" || e.key === "i") && snake.dy === 0) {
+  else if ((e.key === "ArrowUp" || e.key === "w" || e.key === "i") && canTurn(snake, 'up')) {
     snake.autoplay = false;
     snake.queue_turn_up();
   }
   // right arrow key
-  else if ((e.key === "ArrowRight" || e.key === "d" || e.key === "l") && snake.dx === 0) {
+  else if ((e.key === "ArrowRight" || e.key === "d" || e.key === "l") && canTurn(snake, 'right')) {
     snake.autoplay = false;
     snake.queue_turn_right();
   }
   // down arrow key
-  else if ((e.key === "ArrowDown" || e.key === "s" || e.key === "k") && snake.dy === 0) {
+  else if ((e.key === "ArrowDown" || e.key === "s" || e.key === "k") && canTurn(snake, 'down')) {
     snake.autoplay = false;
     snake.queue_turn_down();
   }
