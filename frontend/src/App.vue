@@ -15,7 +15,7 @@
           <Score title="Personal Best" :score="personalBest"></Score>
         </div>
       </div>
-      <div class="instruction-container">Instructions:<div v-for="(instruction, index) in instuctions"> {{ index + 1 }}.
+      <div class="instruction-container">Instructions:<div v-for="(instruction, index) in instructions"> {{ index + 1 }}.
           {{
             instruction
           }}
@@ -71,7 +71,7 @@ import Score from './components/Score.vue'
 import Alert from "./components/Alert.vue";
 
 
-const instuctions = ref(["Move with arrow keys/WASD/IJKL", "Eat the 404", "Don't touch your tail", "Pause/Unpause with Esc"])
+const instructions = ref(["Move with arrow keys/WASD/IJKL", "Eat the 404", "Don't touch your tail", "Pause/Unpause with Esc"])
 
 function truncateText(text) {
   const maxLength = 10
@@ -81,12 +81,6 @@ function truncateText(text) {
     return text;
   }
 }
-
-const time_counter_seconds = ref(0);
-
-setInterval(() => { time_counter_seconds + 1 }, 1000);
-
-const game_start_time_seconds = ref(0)
 
 const topScores = ref([]);
 
@@ -521,7 +515,6 @@ function showAlert(text) {
 
 
 const CHEATING_ALERT_TEXT = "Autoplay enabled"
-const CHEATING_ALERT_DISABLED_TEXT = "Autoplay enabled"
 const autoplayCheat = 'aspirine'.split('');
 let autoplayCheatPointer = 0
 

@@ -89,6 +89,11 @@ def get_client_ip(request: Request) -> str:
         return request.client.host
 
 
+def escape_like(value: str) -> str:
+    """Escape LIKE special characters to prevent wildcard injection."""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 def xor_cipher(data: str, key: str) -> str:
     result = "".join(
         chr(ord(data[i]) ^ ord(key[i % len(key)])) for i in range(len(data))
@@ -192,7 +197,7 @@ async def save_score(validated: dict = Depends(validate_score_request),db: Sessi
     score_request = ScoreRequest(
             username=validated["username"],
             score=validated["score"],
-            timeTakenSeconds=int(validated["timeTakenSeconds"])
+            timeTakenSeconds=float(validated["timeTakenSeconds"])
         )
     user = db.exec(select(User).where(User.username == score_request.username)).first()
     if not user:
@@ -215,19 +220,29 @@ async def save_score(validated: dict = Depends(validate_score_request),db: Sessi
 
 
 def get_top_scoreboard_service(db: Session, page: int, per_page: int, username: Optional[str] = None):
-    query = (
+    # Subquery: find each user's max score
+    best_score_subq = (
         select(
-            User,
+            Score.user_id,
             func.max(Score.score).label("max_score"),
-            Score.scored_at,
-            Score.time_taken_seconds,
         )
+        .group_by(Score.user_id)
+        .subquery()
+    )
+
+    # Join back to get the full Score row for each user's best score
+    query = (
+        select(User, Score)
         .join(Score)
-        .group_by(User.user_id) #type: ignore #IDK
+        .join(
+            best_score_subq,
+            (Score.user_id == best_score_subq.c.user_id) &
+            (Score.score == best_score_subq.c.max_score),
+        )
     )
 
     if username:
-        query = query.where(column(User.username).like(f"%{username}%"))
+        query = query.where(column(User.username).like(f"%{escape_like(username)}%", escape="\\"))
 
     query = query.order_by(desc(Score.score), asc(Score.scored_at))
 
@@ -235,29 +250,22 @@ def get_top_scoreboard_service(db: Session, page: int, per_page: int, username: 
     result = db.exec(query.offset((page - 1) * per_page).limit(per_page)).all()
 
     return [
-        get_scoreboard_pair(
-            user=user,
-            score=Score(
-                scored_at=scored_at,
-                score=score,
-                time_taken_seconds=time_taken_seconds,
-            ),
-        )
-        for user, score, scored_at, time_taken_seconds in result
+        get_scoreboard_pair(user=user, score=score)
+        for user, score in result
     ]
 
 
 @app.get(f"{global_variables.URL_PREFIX}/api/score", response_model=ScoreboardResponse)
 async def get_scoreboard(
     page: int = Query(1, ge=1),
-    per_page: int = Query(10, ge=1),
+    per_page: int = Query(10, ge=1, le=100),
     username: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
     query = select(User, Score).join(Score)
 
     if username:
-        query = query.where(column(User.username).like(f"%{username}%"))
+        query = query.where(column(User.username).like(f"%{escape_like(username)}%", escape="\\"))
 
     query = query.order_by(desc(Score.score), desc(Score.scored_at))
 
@@ -309,7 +317,7 @@ async def get_user_top_score(username: str, db: Session = Depends(get_db)):
 @app.get(f"{global_variables.URL_PREFIX}/api/top-score", response_model=ScoreboardResponse)
 async def get_top_scoreboard(
     page: int = Query(1, ge=1),
-    per_page: int = Query(10, ge=1),
+    per_page: int = Query(10, ge=1, le=100),
     username: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
@@ -324,7 +332,7 @@ async def get_top_scoreboard(
 async def stream_scores(
     request: Request,
     page: int = Query(1, ge=1),
-    per_page: int = Query(10, ge=1),
+    per_page: int = Query(10, ge=1, le=100),
     username: Optional[str] = None,
 ):
     async def event_stream():
