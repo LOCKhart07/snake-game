@@ -245,52 +245,28 @@ function loop() {
   // Accumulate excess time
   excessTime += msPassed;
 
-  // Skip frames if not enough time has passed
+  // Run logic updates (no rendering)
   while (excessTime >= msPerFrame) {
-    // Update game state
     updateGameState();
-
-    // Reduce excess time by the time spent on one frame
     excessTime -= msPerFrame;
   }
 
-  // // Render the frame (this should be called only once per animation frame)
-  // renderFrame();
+  // Render once per animation frame
+  render();
 }
 
-// Function to update the game state
+// Game logic only — no drawing
 function updateGameState() {
-  if (game_paused) {
-    // context.fillStyle = "#ffcb74";
-    // context.fillRect(20, 200, (25 * GRID_SIZE) * 0.6, GRID_SIZE * 5);
+  if (game_paused) return;
 
-    // context.fillStyle = "#ffcb74";
-    // context.font = `${GRID_SIZE * 4}px impact`;
-    // context.fillText("PAUSED", (GRID_SIZE * 25) * 0.25, (GRID_SIZE * 25) * 0.55);
-
-    context.fillStyle = "#ffcb74";
-    context.strokeStyle = "#373636";
-    context.lineWidth = 1; // Outline thickness (adjust to your liking)
-    context.font = `${GRID_SIZE * 4}px impact`;
-    context.strokeText("PAUSED", (GRID_SIZE * 25) * 0.25, (GRID_SIZE * 25) * 0.55);
-    context.fillText("PAUSED", (GRID_SIZE * 25) * 0.25, (GRID_SIZE * 25) * 0.55);
-
-
-    // context.fillStyle = "red";
-    // context.fillRect(20, 200, 5, 5);
-
-
-    return
-  }; // Stop the loop if the game is paused
   frameCount++;
-  if (frameCount < slowFactor) return; // Skip frames to slow down the game
+  if (frameCount < slowFactor) return;
   frameCount = 0;
 
   if (snake.autoplay) {
     snake.doOptimalMove(snake.x, snake.y);
   }
   snake.flush_queued_move();
-  context.clearRect(0, 0, canvasWidth, canvasHeight);
 
   // Move snake by velocity and handle wrapping
   snake.move();
@@ -304,13 +280,46 @@ function updateGameState() {
     snake.cells.pop();
   }
 
+  // Handle eating apple
+  if (snake.x === apple.x && snake.y === apple.y) {
+    snake.increase_length();
+    currentScore.value = snake.maxCells - SNAKE_INITIAL_LENGTH;
+    apple = createAppleForSnake();
+
+    if (currentScore.value > personalBest.value) {
+      personalBest.value = currentScore.value;
+    }
+  }
+
+  // Check for collisions with self
+  for (let i = 1; i < snake.cells.length; i++) {
+    if (`${snake.cells[i].x},${snake.cells[i].y}` === headPosition) {
+      let timeTaken = (new Date().getTime() - snake.birthDatetime.getTime());
+      const totalPauseTime = snake.pauses.reduce((sum, pause) => sum + pause, 0);
+      timeTaken = Math.max(0, timeTaken - totalPauseTime);
+      const timeTakenSeconds = timeTaken / 1000;
+      if (shouldSubmitScore(currentScore.value)) {
+        ScoreService.saveScore(username, currentScore.value, timeTakenSeconds);
+      }
+      currentScore.value = 0;
+
+      snake = new Snake(160, 160, GRID_SIZE);
+      apple = createAppleForSnake();
+      break;
+    }
+  }
+}
+
+// Rendering only — called once per animation frame
+function render() {
+  context.clearRect(0, 0, canvasWidth, canvasHeight);
+
   // Draw the apple
   context.fillStyle = "#ffcb74";
   context.fillRect(apple.x, apple.y, GRID_SIZE - 1, GRID_SIZE - 1);
   context.fillStyle = "#373636";
   context.font = `${GRID_SIZE * 0.5}px arial`;
   context.fillText("404", apple.x, apple.y + GRID_SIZE / 1.5);
-
 
   // Draw snake with gradient and eyes
   context.beginPath();
@@ -335,35 +344,14 @@ function updateGameState() {
     }
   });
 
-  // Handle eating apple
-  if (snake.x === apple.x && snake.y === apple.y) {
-    snake.increase_length();
-    currentScore.value = snake.maxCells - SNAKE_INITIAL_LENGTH;
-    apple = createAppleForSnake();
-
-    if (currentScore.value > personalBest.value) {
-      personalBest.value = currentScore.value;
-    }
-  }
-
-  // Check for collisions with self
-  for (let i = 1; i < snake.cells.length; i++) {
-    if (`${snake.cells[i].x},${snake.cells[i].y}` === headPosition) {
-      let timeTaken = (new Date().getTime() - snake.birthDatetime.getTime());
-      // Sum up all pause durations
-      const totalPauseTime = snake.pauses.reduce((sum, pause) => sum + pause, 0);
-      // Subtract total pause time from time taken
-      timeTaken = Math.max(0, timeTaken - totalPauseTime);
-      const timeTakenSeconds = timeTaken / 1000;
-      if (shouldSubmitScore(currentScore.value)) {
-        ScoreService.saveScore(username, currentScore.value, timeTakenSeconds);
-      }
-      currentScore.value = 0;
-
-      snake = new Snake(160, 160, GRID_SIZE);
-      apple = createAppleForSnake();
-      break;
-    }
+  // Draw paused overlay
+  if (game_paused) {
+    context.fillStyle = "#ffcb74";
+    context.strokeStyle = "#373636";
+    context.lineWidth = 1;
+    context.font = `${GRID_SIZE * 4}px impact`;
+    context.strokeText("PAUSED", (GRID_SIZE * 25) * 0.25, (GRID_SIZE * 25) * 0.55);
+    context.fillText("PAUSED", (GRID_SIZE * 25) * 0.25, (GRID_SIZE * 25) * 0.55);
   }
 }
 
