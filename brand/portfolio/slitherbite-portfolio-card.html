@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>portfolio card — SlitherBite</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    /* pulled from the game's real theme: snake-green + the amber "404" + charcoal board */
+    --brand:   #1f7a3a;   /* snake green (icon / panel base)        */
+    --brand-2: #155329;   /* mid gradient stop                      */
+    --brand-3: #2a2828;   /* deep stop — the game's charcoal board   */
+    --cream:   #f2efe7;   /* panel text                              */
+    --accent:  #ffcb74;   /* the "404" food / champion gold          */
+    --surface: #373636;   /* browser content bg = the real game bg   */
+    --ink:     #edece5;
+    --muted:   rgba(237,236,229,.60);
+    --faint:   rgba(237,236,229,.36);
+    --divider: rgba(255,255,255,.09);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: #0b0b0c; }
+  body { display: grid; place-items: center; min-height: 100vh; padding: 40px;
+    font-family: 'Inter', system-ui, sans-serif; }
+  .hint { position: fixed; top: 14px; left: 16px; font-size: 12px;
+    color: rgba(255,255,255,.34); font-family: 'JetBrains Mono', monospace; }
+  body.bare { padding: 0; display: block; min-height: 0; }
+  body.bare .hint { display: none; }
+  body.bare #card { border-radius: 0; }
+
+  #card {
+    width: 1600px; height: 740px; overflow: hidden; position: relative;
+    border-radius: 20px;
+    background:
+      radial-gradient(960px 640px at 20% 26%, color-mix(in srgb, var(--brand) 64%, #fff) 0%, transparent 58%),
+      linear-gradient(135deg, var(--brand) 0%, var(--brand-2) 44%, var(--brand-3) 100%);
+    display: flex; align-items: stretch;
+  }
+  #card::after { content: ""; position: absolute; inset: 0; opacity: .045;
+    mix-blend-mode: overlay;
+    background-image: radial-gradient(circle at 1px 1px, #fff 1px, transparent 0);
+    background-size: 5px 5px; }
+
+  /* ---- LEFT: brand panel ---- */
+  .brand { flex: 1; padding: 92px 64px 92px 96px; position: relative; z-index: 2;
+    display: flex; flex-direction: column; justify-content: center; gap: 26px; }
+  .kicker { font-size: 14px; letter-spacing: .34em; font-weight: 700;
+    color: color-mix(in srgb, var(--cream) 56%, transparent); text-transform: uppercase; }
+  .lockup { display: flex; align-items: center; gap: 30px; }
+  .icon { width: 128px; height: 128px; border-radius: 31px; flex-shrink: 0;
+    overflow: hidden;
+    box-shadow: 0 22px 46px rgba(0,0,0,.46), 0 0 0 1px rgba(255,255,255,.08) inset; }
+  .icon svg { width: 100%; height: 100%; display: block; }
+  .wordmark { font-size: 78px; font-weight: 800; color: var(--cream);
+    letter-spacing: -2.5px; line-height: 1; }
+  .rule { width: 66px; height: 4px; border-radius: 2px; background: var(--accent); }
+  .tag { font-size: 31px; font-weight: 700; color: var(--cream);
+    line-height: 1.3; max-width: 580px; letter-spacing: -.5px; }
+  .tag .soft { color: color-mix(in srgb, var(--cream) 60%, transparent); font-weight: 500; }
+  .sub { font-size: 16.5px; font-weight: 500;
+    color: color-mix(in srgb, var(--cream) 56%, transparent); }
+
+  /* ---- RIGHT: browser-chrome product preview ---- */
+  .stage { width: 660px; position: relative; z-index: 2; }
+  .glow { position: absolute; width: 520px; height: 520px; border-radius: 50%;
+    top: 50%; left: 47%; transform: translate(-50%,-50%);
+    background: radial-gradient(circle, color-mix(in srgb, var(--accent) 18%, transparent) 0%, transparent 66%); }
+  .browser { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    width: 564px; background: var(--surface); border-radius: 16px; overflow: hidden;
+    border: 1px solid rgba(255,255,255,.08);
+    box-shadow: 0 50px 100px rgba(0,0,0,.55), 0 0 0 1px rgba(0,0,0,.4); }
+  .bbar { display: flex; align-items: center; gap: 8px; padding: 13px 16px;
+    background: #2c2b2b; border-bottom: 1px solid rgba(255,255,255,.05); }
+  .dot { width: 11px; height: 11px; border-radius: 50%; }
+  .url { margin-left: 12px; flex: 1; height: 26px; border-radius: 7px;
+    background: #1f1e1e; display: flex; align-items: center; padding: 0 14px;
+    font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--muted); }
+  .url b { color: var(--ink); font-weight: 600; }
+  .content { padding: 22px 22px 20px; }
+
+  .scorebar { display: flex; align-items: flex-end; gap: 26px; margin-bottom: 16px; }
+  .sc-l { font-size: 11px; letter-spacing: .16em; font-weight: 700;
+    color: var(--faint); text-transform: uppercase; }
+  .sc-v { font-family: 'JetBrains Mono', monospace; font-weight: 700;
+    font-size: 50px; line-height: 1; color: var(--accent); letter-spacing: -1px; }
+  .sc-pb { font-family: 'JetBrains Mono', monospace; font-weight: 700;
+    font-size: 24px; line-height: 1; color: var(--muted); margin-top: 4px; }
+
+  /* THE HERO — the game board. Dominant, instantly reads as "snake game". */
+  .board { position: relative; border-radius: 9px; overflow: hidden;
+    background: #2f2e2e;
+    background-image:
+      linear-gradient(rgba(255,255,255,.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,.03) 1px, transparent 1px);
+    background-size: calc(100%/13) calc(100%/8), calc(100%/13) calc(100%/8);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.05);
+    display: grid; grid-template-columns: repeat(13, 1fr); grid-template-rows: repeat(8, 1fr);
+    aspect-ratio: 13 / 8; }
+  .seg { border-radius: 4px; margin: 1.5px; }
+  .food { background: var(--accent); border-radius: 4px; margin: 1.5px;
+    display: grid; place-items: center; color: #373636; font-weight: 800;
+    font-family: 'JetBrains Mono', monospace; font-size: 15px; letter-spacing: -.5px; }
+  .eye { position: absolute; width: 5px; height: 5px; border-radius: 50%; background: #fff; }
+
+  .lb { margin-top: 16px; }
+  .lbrow { display: grid; grid-template-columns: 1fr auto auto; gap: 18px;
+    align-items: center; padding: 7px 4px; font-size: 13px; }
+  .lbrow.head { font-size: 10.5px; letter-spacing: .14em; font-weight: 700;
+    color: var(--faint); text-transform: uppercase; padding-bottom: 4px;
+    border-bottom: 1px solid var(--divider); }
+  .lbrow .nm { font-weight: 600; color: var(--ink); display: flex; align-items: center; gap: 7px; }
+  .lbrow .s { font-family: 'JetBrains Mono', monospace; font-weight: 700; color: var(--ink); }
+  .lbrow .t { font-family: 'JetBrains Mono', monospace; color: var(--muted); font-size: 12px; }
+  .lbrow.champ .nm, .lbrow.champ .s { color: var(--accent); }
+  .lbrow.dim .nm, .lbrow.dim .s { color: var(--muted); font-weight: 500; }
+  .crown { width: 14px; height: 14px; flex-shrink: 0; }
+</style>
+</head>
+<body>
+  <div class="hint">portfolio card · 1600×740. Open with #bare for the exact-crop export.</div>
+  <script>if (location.hash === '#bare') document.body.classList.add('bare');</script>
+
+  <div id="card">
+    <!-- LEFT: brand panel -->
+    <div class="brand">
+      <div class="kicker">Browser Game · Live Leaderboard</div>
+      <div class="lockup">
+        <span class="icon">
+          <!-- Custom app-tile: the game's charcoal board, a green snake body
+               (chain of rounded cells, classic snake-game read) eating the amber "404". -->
+          <svg viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+            <rect width="128" height="128" rx="31" fill="#373636"/>
+            <!-- food -->
+            <rect x="24" y="22" width="20" height="20" rx="4" fill="#ffcb74"/>
+            <!-- snake body: tail (dark) -> head (bright), forming an L -->
+            <rect x="24" y="84" width="20" height="20" rx="4" fill="#0e4421"/>
+            <rect x="46" y="84" width="20" height="20" rx="4" fill="#146731"/>
+            <rect x="68" y="84" width="20" height="20" rx="4" fill="#1c8740"/>
+            <rect x="84" y="84" width="20" height="20" rx="4" fill="#249b4b"/>
+            <rect x="84" y="62" width="20" height="20" rx="4" fill="#2aa551"/>
+            <!-- head -->
+            <rect x="84" y="40" width="20" height="20" rx="5" fill="#33b85b"/>
+            <circle cx="90" cy="46" r="2.4" fill="#fff"/>
+            <circle cx="98" cy="46" r="2.4" fill="#fff"/>
+          </svg>
+        </span>
+        <span class="wordmark">SlitherBite</span>
+      </div>
+      <div class="rule"></div>
+      <div class="tag">Classic snake. Global stakes.<br />
+        <span class="soft">Eat the 404 — climb the live board.</span></div>
+      <div class="sub">Vue 3 · FastAPI · SSE real-time leaderboard with replay-validated anti-cheat</div>
+    </div>
+
+    <!-- RIGHT: browser-chrome preview of the live game -->
+    <div class="stage">
+      <div class="glow"></div>
+      <div class="browser">
+        <div class="bbar">
+          <span class="dot" style="background:#ff5f57"></span>
+          <span class="dot" style="background:#febc2e"></span>
+          <span class="dot" style="background:#28c840"></span>
+          <span class="url">🔒&nbsp;&nbsp;<b>slitherbite</b>.lockhart.in</span>
+        </div>
+        <div class="content">
+          <div class="scorebar">
+            <div>
+              <div class="sc-l">Score</div>
+              <div class="sc-v">1&thinsp;284</div>
+            </div>
+            <div>
+              <div class="sc-l">Personal Best</div>
+              <div class="sc-pb">1&thinsp;284</div>
+            </div>
+          </div>
+
+          <!-- HERO: the game board. Snake winds across the grid toward the 404. -->
+          <div class="board" id="board"></div>
+
+          <div class="lb">
+            <div class="lbrow head"><span>Player</span><span>Score</span><span>Time</span></div>
+            <div class="lbrow champ">
+              <span class="nm">
+                <svg class="crown" viewBox="0 0 24 24" fill="#ffcb74"><path d="M3 7l4 4 5-7 5 7 4-4-2 12H5L3 7z"/></svg>
+                NovaViper
+              </span>
+              <span class="s">1&thinsp;284</span><span class="t">4:12</span>
+            </div>
+            <div class="lbrow dim"><span class="nm">PixelDrift</span><span class="s">1&thinsp;102</span><span class="t">3:58</span></div>
+            <div class="lbrow dim"><span class="nm">ByteSerpent</span><span class="s">967</span><span class="t">5:20</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Build the snake board: 13×8 grid, a long winding snake + the amber "404" food.
+    const COLS = 13, ROWS = 8;
+    const board = document.getElementById('board');
+    // snake path, head first -> tail; head faces right (eyes on the right edge)
+    const snake = [
+      [9,1],[8,1],[7,1],[6,1],[5,1],
+      [5,2],[5,3],
+      [6,3],[7,3],[8,3],[9,3],
+      [9,4],[9,5],
+      [8,5],[7,5],[6,5],[5,5],[4,5],
+      [4,6]
+    ];
+    const food = [12,1];
+    const head = '#33b85b', tail = '#0d3a1e';
+    function lerp(a,b,t){ return Math.round(a+(b-a)*t); }
+    const h=[0x33,0xb8,0x5b], tl=[0x0d,0x3a,0x1e];
+    snake.forEach(([c,r],i)=>{
+      const t = i/(snake.length-1);
+      const col = `rgb(${lerp(h[0],tl[0],t)},${lerp(h[1],tl[1],t)},${lerp(h[2],tl[2],t)})`;
+      const d = document.createElement('div');
+      d.className = 'seg';
+      d.style.background = col;
+      d.style.gridColumn = (c+1); d.style.gridRow = (r+1);
+      if (i===0){
+        d.style.position='relative';
+        const e1=document.createElement('span'); e1.className='eye';
+        e1.style.right='3px'; e1.style.top='4px';
+        const e2=document.createElement('span'); e2.className='eye';
+        e2.style.right='3px'; e2.style.bottom='4px';
+        d.appendChild(e1); d.appendChild(e2);
+      }
+      board.appendChild(d);
+    });
+    const f = document.createElement('div');
+    f.className = 'food'; f.textContent = '404';
+    f.style.gridColumn = (food[0]+1); f.style.gridRow = (food[1]+1);
+    board.appendChild(f);
+  </script>
+</body>
+</html>
