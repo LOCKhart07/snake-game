@@ -80,9 +80,14 @@ jobs:
           host: ${{ secrets.ORACLE_HOST }}
           username: ${{ secrets.ORACLE_USERNAME }}
           key: ${{ secrets.ORACLE_SSH_KEY }}
+          envs: ANALYTICS_PASSWORD
           script: |
             sudo mkdir -p /tmp/${{ github.repository }}
             sudo curl -L https://raw.githubusercontent.com/${{ github.repository }}/main/backend/docker-compose.yaml -o /tmp/${{ github.repository }}/docker-compose.yaml
+            printf 'ANALYTICS_PASSWORD=%s\n' "$ANALYTICS_PASSWORD" | sudo tee /tmp/${{ github.repository }}/.env > /dev/null
+            sudo chmod 600 /tmp/${{ github.repository }}/.env
             cd /tmp/${{ github.repository }}
             sudo docker compose up -d
             sudo rm -rf /tmp/${{ github.repository }}
+        env:
+          ANALYTICS_PASSWORD: ${{ secrets.ANALYTICS_PASSWORD }}
