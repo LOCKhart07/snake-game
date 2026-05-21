@@ -84,7 +84,9 @@ jobs:
           script: |
             sudo mkdir -p /tmp/${{ github.repository }}
             sudo curl -L https://raw.githubusercontent.com/${{ github.repository }}/main/backend/docker-compose.yaml -o /tmp/${{ github.repository }}/docker-compose.yaml
-            printf 'ANALYTICS_PASSWORD=%s\n' "$ANALYTICS_PASSWORD" | sudo tee /tmp/${{ github.repository }}/.env > /dev/null
+            sudo tee /tmp/${{ github.repository }}/.env > /dev/null <<EOF
+            ANALYTICS_PASSWORD=$ANALYTICS_PASSWORD
+            EOF
             sudo chmod 600 /tmp/${{ github.repository }}/.env
             cd /tmp/${{ github.repository }}
             sudo docker compose up -d
