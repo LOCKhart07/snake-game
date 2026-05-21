@@ -11,8 +11,7 @@ let hostName = window.location.hostname;
 let protocol = window.location.protocol;
 let port = window.location.port;
 
-const API_BASE_URL = "https://lockhart.in/snake-game/";
-// const API_BASE_URL = "http://localhost:8000/snake-game/";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://lockhart.in/snake-game/";
 
 const api = axios.create({
 

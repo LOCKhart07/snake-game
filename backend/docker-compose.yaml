@@ -7,6 +7,8 @@ services:
     stdin_open: true
     ports:
       - "8000:8000"
+    environment:
+      - ANALYTICS_PASSWORD=${ANALYTICS_PASSWORD:-}
     volumes:
       # attach the relative directory 'data' to the container's /data path
       - /mnt/snake-game:/data

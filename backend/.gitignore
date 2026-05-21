@@ -14,6 +14,10 @@ pyrightconfig.json
 
 playground.ipynb
 
+# Local dev launchers and DB files
+*.local.py
+dev_score.db
+
 # DB FILE
 instance
 

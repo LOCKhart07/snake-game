@@ -2,11 +2,12 @@ from typing import List, Optional, Dict, Any
 import datetime
 import json
 import base64
-from fastapi import FastAPI, Depends, Request, HTTPException, Query, status
+import hmac
+from fastapi import FastAPI, Depends, Header, Request, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from sqlmodel import Field, Session, SQLModel, create_engine, select, desc, asc, column
-from sqlalchemy import func 
+from sqlalchemy import func, case
 from sqlalchemy.ext.asyncio import create_async_engine
 from pydantic import BaseModel
 import global_variables
@@ -364,6 +365,118 @@ async def stream_scores(
                 break
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+def verify_admin_token(
+    x_admin_token: Optional[str] = Header(default=None, alias="X-Admin-Token"),
+) -> bool:
+    expected = global_variables.ANALYTICS_PASSWORD
+    if not expected:
+        raise HTTPException(status_code=503, detail="Analytics disabled")
+    if not x_admin_token or not hmac.compare_digest(x_admin_token, expected):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    return True
+
+
+_PERIOD_TO_DAYS = {"day": 1, "week": 7, "month": 30, "all": None}
+
+
+def _period_cutoff_iso(period: str) -> Optional[str]:
+    days = _PERIOD_TO_DAYS.get(period)
+    if days is None:
+        return None
+    cutoff = datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=days)
+    return cutoff.isoformat()
+
+
+@app.get(f"{global_variables.URL_PREFIX}/api/analytics/verify")
+async def analytics_verify(_: bool = Depends(verify_admin_token)):
+    return {"ok": True}
+
+
+@app.get(f"{global_variables.URL_PREFIX}/api/analytics/summary")
+async def analytics_summary(
+    period: str = Query("week", pattern="^(day|week|month|all)$"),
+    db: Session = Depends(get_db),
+    _: bool = Depends(verify_admin_token),
+):
+    cutoff = _period_cutoff_iso(period)
+
+    top_players_q = (
+        select(
+            User.username,
+            func.max(Score.score).label("best_score"),
+            func.count(Score.score_id).label("plays"),
+            func.sum(
+                case((Score.time_taken_seconds < 0, 0), else_=Score.time_taken_seconds)
+            ).label("total_time"),
+        )
+        .join(Score)
+        .group_by(User.user_id, User.username)
+        .order_by(desc("best_score"), asc("plays"))
+        .limit(20)
+    )
+    if cutoff is not None:
+        top_players_q = top_players_q.where(Score.scored_at >= cutoff)
+    top_players = [
+        {
+            "username": username,
+            "bestScore": best_score,
+            "plays": plays,
+            "totalTimeSeconds": float(total_time) if total_time is not None else 0.0,
+        }
+        for username, best_score, plays, total_time in db.exec(top_players_q).all()
+    ]
+
+    if cutoff is not None:
+        activity_start_dt = datetime.datetime.fromisoformat(cutoff)
+    else:
+        earliest = db.exec(select(func.min(Score.scored_at))).first()
+        activity_start_dt = (
+            datetime.datetime.fromisoformat(earliest)
+            if earliest
+            else datetime.datetime.now(datetime.UTC)
+        )
+    activity_start_date = activity_start_dt.date()
+    today_date = datetime.datetime.now(datetime.UTC).date()
+
+    date_col = func.substr(Score.scored_at, 1, 10)
+    activity_q = (
+        select(date_col.label("date"), func.count(Score.score_id).label("count"))
+        .where(Score.scored_at >= activity_start_dt.isoformat())
+        .group_by(date_col)
+        .order_by(date_col)
+    )
+    by_date = {date: count for date, count in db.exec(activity_q).all()}
+    span_days = max((today_date - activity_start_date).days + 1, 1)
+    daily_activity = []
+    for i in range(span_days):
+        d = (activity_start_date + datetime.timedelta(days=i)).isoformat()
+        daily_activity.append({"date": d, "count": by_date.get(d, 0)})
+
+    samples_q = select(Score.score, Score.scored_at)
+    if cutoff is not None:
+        samples_q = samples_q.where(Score.scored_at >= cutoff)
+    samples = [
+        {"score": score, "scoredAt": scored_at}
+        for score, scored_at in db.exec(samples_q).all()
+    ]
+
+    distinct_users_q = select(func.count(func.distinct(Score.user_id)))
+    if cutoff is not None:
+        distinct_users_q = distinct_users_q.where(Score.scored_at >= cutoff)
+    unique_players = db.exec(distinct_users_q).first() or 0
+
+    return {
+        "period": period,
+        "topPlayers": top_players,
+        "dailyActivity": daily_activity,
+        "samples": samples,
+        "totals": {
+            "plays": len(samples),
+            "uniquePlayers": unique_players,
+        },
+    }
 
 
 if __name__ == "__main__":
