@@ -3,6 +3,7 @@ services:
     container_name: snake-game-score-service
     image: ghcr.io/lockhart07/snake-game:latest
     pull_policy: always
+    restart: unless-stopped
     tty: true
     stdin_open: true
     ports:
